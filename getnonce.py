@@ -46,20 +46,30 @@ def run_process(command, *args, silence_errors=False, timeout=None):
     return p.stdout.strip()
 
 
-def wait_for_device(mode):
-    """Wait for a device to be connected over USB and unlocked."""
+def wait_for_device(mode, timeout=120):
+    """Wait for a device, exiting with an error if the timeout expires."""
 
     if mode == "normal":
+        command = ("idevicediagnostics", "diagnostics")
         print("[yellow]Waiting for device to be connected and unlocked[/yellow]", end="")
-
-        while not run_process("idevicediagnostics", "diagnostics", silence_errors=True):
-            print("[yellow].[/yellow]", end="")
-            time.sleep(1)
     elif mode == "recovery":
+        command = ("irecovery", "-m")
         print("Waiting for device", end="")
+    else:
+        raise ValueError(f"Unsupported device mode: {mode}")
 
-        while not run_process("irecovery", "-m", silence_errors=True):
-            print(".", end="")
+    deadline = time.monotonic() + timeout
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            print(f"\n[red]ERROR: Timed out after {timeout:g} seconds waiting for device in {mode} mode[/red]")
+            sys.exit(1)
+
+        if run_process(*command, silence_errors=True, timeout=min(5, remaining)):
+            break
+
+        print("[yellow].[/yellow]" if mode == "normal" else ".", end="")
+        time.sleep(max(0, min(1, deadline - time.monotonic())))
 
     print()
 
@@ -138,7 +148,7 @@ def get_recovery_apnonce(old_apnonce):
 
 if __name__ == "__main__":
     os.environ["PATH"] = os.pathsep.join([".", os.environ["PATH"]])
-    for binary in ["idevice_id", "idevicediagnostics", "ideviceinfo", "irecovery"]:
+    for binary in ["idevice_id", "idevicediagnostics", "ideviceinfo", "ideviceenterrecovery", "irecovery"]:
         if not shutil.which(binary):
             print(
                 f"[red]ERROR: {binary} not found. Please place the binary in your PATH "
